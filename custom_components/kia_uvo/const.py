@@ -9,6 +9,10 @@ CONF_NO_FORCE_REFRESH_HOUR_FINISH: str = "no_force_refresh_hour_finish"
 CONF_ENABLE_GEOLOCATION_ENTITY: str = "enable_geolocation_entity"
 CONF_USE_EMAIL_WITH_GEOCODE_API: str = "use_email_with_geocode_api"
 
+# Token persistence keys for OTP support
+CONF_REFRESH_TOKEN: str = "refresh_token"
+CONF_DEVICE_ID: str = "device_id"
+
 REGION_EUROPE: str = "Europe"
 REGION_CANADA: str = "Canada"
 REGION_USA: str = "USA"

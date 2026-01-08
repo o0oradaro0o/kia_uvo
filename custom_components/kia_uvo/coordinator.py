@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import datetime as dt
 import traceback
 import logging
 import asyncio
@@ -12,6 +13,7 @@ from hyundai_kia_connect_api import (
     ClimateRequestOptions,
     WindowRequestOptions,
     ScheduleChargingClimateRequestOptions,
+    Token,
 )
 from hyundai_kia_connect_api.exceptions import AuthenticationError
 
@@ -31,9 +33,11 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BRAND,
+    CONF_DEVICE_ID,
     CONF_FORCE_REFRESH_INTERVAL,
     CONF_NO_FORCE_REFRESH_HOUR_FINISH,
     CONF_NO_FORCE_REFRESH_HOUR_START,
+    CONF_REFRESH_TOKEN,
     DEFAULT_FORCE_REFRESH_INTERVAL,
     DEFAULT_NO_FORCE_REFRESH_HOUR_FINISH,
     DEFAULT_NO_FORCE_REFRESH_HOUR_START,
@@ -54,6 +58,8 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize."""
         self.platforms: set[str] = set()
+        self.config_entry = config_entry
+        self.hass = hass
         self.vehicle_manager = VehicleManager(
             region=config_entry.data.get(CONF_REGION),
             brand=config_entry.data.get(CONF_BRAND),
@@ -68,6 +74,20 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
             ),
             language=hass.config.language,
         )
+        
+        # Set stored token from config entry to skip OTP on subsequent logins
+        stored_refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
+        stored_device_id = config_entry.data.get(CONF_DEVICE_ID)
+        if stored_refresh_token:
+            _LOGGER.debug(f"{DOMAIN} - Using stored refresh token for authentication")
+            self.vehicle_manager.token = Token(
+                username=config_entry.data.get(CONF_USERNAME),
+                password=config_entry.data.get(CONF_PASSWORD),
+                access_token="",  # Will be refreshed
+                refresh_token=stored_refresh_token,
+                device_id=stored_device_id,
+                valid_until=dt.datetime.min.replace(tzinfo=dt.timezone.utc),  # Force refresh
+            )
         self.scan_interval: int = (
             config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL) * 60
         )
@@ -168,9 +188,28 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_check_and_refresh_token(self):
         """Refresh token if needed via library."""
-        await self.hass.async_add_executor_job(
+        token_refreshed = await self.hass.async_add_executor_job(
             self.vehicle_manager.check_and_refresh_token
         )
+        
+        # If token was refreshed, persist the new tokens to config entry
+        if token_refreshed and self.vehicle_manager.token:
+            token = self.vehicle_manager.token
+            new_refresh_token = getattr(token, "refresh_token", None)
+            new_device_id = getattr(token, "device_id", None)
+            
+            current_refresh_token = self.config_entry.data.get(CONF_REFRESH_TOKEN)
+            
+            # Only update if tokens have changed
+            if new_refresh_token and new_refresh_token != current_refresh_token:
+                _LOGGER.debug(f"{DOMAIN} - Persisting updated refresh token to config entry")
+                new_data = dict(self.config_entry.data)
+                new_data[CONF_REFRESH_TOKEN] = new_refresh_token
+                if new_device_id:
+                    new_data[CONF_DEVICE_ID] = new_device_id
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=new_data
+                )
 
     async def async_await_action_and_refresh(self, vehicle_id, action_id):
         try:

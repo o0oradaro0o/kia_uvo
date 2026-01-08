@@ -20,6 +20,20 @@
           "pin": "[%key:common::config_flow::data::pin%]"
         }
       },
+      "otp_select": {
+        "title": "OTP Verification Required",
+        "description": "Kia Connect requires OTP verification. Choose how to receive your verification code:",
+        "data": {
+          "otp_method": "Send OTP to"
+        }
+      },
+      "otp_code": {
+        "title": "Enter Verification Code",
+        "description": "Enter the verification code sent to your {notification_type}",
+        "data": {
+          "otp_code": "Verification Code"
+        }
+      },
       "user": {
         "title": "[%key:component::hyundai_kia_connect::config::step::user::title%]",
         "description": "[%key:component::hyundai_kia_connect::config::step::user::description%]",

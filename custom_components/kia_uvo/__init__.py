@@ -26,6 +26,8 @@ from .const import (
     CONF_NO_FORCE_REFRESH_HOUR_START,
     CONF_ENABLE_GEOLOCATION_ENTITY,
     CONF_USE_EMAIL_WITH_GEOCODE_API,
+    CONF_REFRESH_TOKEN,
+    CONF_DEVICE_ID,
 )
 from .coordinator import HyundaiKiaConnectDataUpdateCoordinator
 from .services import async_setup_services, async_unload_services
@@ -121,6 +123,20 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
         )
         config_entry.version = 2
         _LOGGER.info("Migration to version %s successful", config_entry.version)
+
+    if config_entry.version == 2:
+        _LOGGER.debug(f"{DOMAIN} - config data- {config_entry}")
+        new_data = dict(config_entry.data)
+        # Add persistence keys for OTP support if they don't exist
+        if CONF_REFRESH_TOKEN not in new_data:
+            new_data[CONF_REFRESH_TOKEN] = None
+        if CONF_DEVICE_ID not in new_data:
+            new_data[CONF_DEVICE_ID] = None
+            
+        hass.config_entries.async_update_entry(config_entry, data=new_data)
+        config_entry.version = 3
+        _LOGGER.info("Migration to version %s successful", config_entry.version)
+
     return True
 
 
