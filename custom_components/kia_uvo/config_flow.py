@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
-import logging
-from typing import Any
+import uuid
+import datetime as dt
 
 from hyundai_kia_connect_api import Token, VehicleManager
 from hyundai_kia_connect_api.exceptions import AuthenticationError
@@ -104,6 +103,62 @@ OPTIONS_SCHEMA = vol.Schema(
 )
 
 
+def _custom_login(api, username, password, otp_handler):
+    """Custom login logic to handle OTP and tncFlag."""
+    # Generate a device ID if not already present
+    if not getattr(api, "device_id", None):
+        api.device_id = str(uuid.uuid4())
+
+    url = f"{api.API_URL}prof/authUser"
+    data = {
+        "deviceKey": api.device_id,
+        "deviceType": 2,
+        "userCredential": {"userId": username, "password": password},
+        "tncFlag": 1, 
+    }
+    
+    headers = api.api_headers()
+    response = api.session.post(url, json=data, headers=headers)
+    response_json = response.json()
+    
+    # Check for OTP requirement
+    if "payload" in response_json and "otpKey" in response_json["payload"]:
+        payload = response_json["payload"]
+        if payload.get("rmTokenExpired") or True: # Always trigger handling if otpKey present
+            # We found OTP requirement!
+            context = {
+                "stage": "choose_destination",
+                "hasEmail": bool(payload.get("hasEmail")),
+                "hasPhone": bool(payload.get("hasPhone")),
+                "email": payload.get("email"),
+                "phone": payload.get("phone"),
+                "otpKey": payload["otpKey"],
+                "xid": response.headers.get("xid", ""),
+                "device_id": api.device_id,
+            }
+            # This triggers the exception we catch in config flow
+            if otp_handler:
+                otp_handler(context)
+
+    # Check for successful login without OTP (if that ever happens or if bypass worked)
+    session_id = response.headers.get("sid")
+    if session_id:
+        return Token(
+            username=username,
+            password=password,
+            access_token=session_id,
+            refresh_token=None,  # Will need to be fetched? Actually authUser returns sid, not rmtoken usually?
+            # Wait, authUser returns sid.
+            # If we get sid here, we are good.
+            device_id=api.device_id,
+            valid_until=dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1),
+        )
+
+    # If we get here it failed
+    _LOGGER.error(f"Login failed: {response.text}")
+    raise AuthenticationError(f"Login failed: {response.text}")
+
+
 async def validate_input(hass: HomeAssistant, user_input: dict[str, Any]) -> Token:
     """Validate the user input allows us to connect."""
     try:
@@ -125,14 +180,36 @@ async def validate_input(hass: HomeAssistant, user_input: dict[str, Any]) -> Tok
                 valid_until=None,
             )
         
-        token: Token = await hass.async_add_executor_job(
-            api.login,
-            user_input[CONF_USERNAME],
-            user_input[CONF_PASSWORD],
-            existing_token,  # Pass existing token if available
-            user_input.get("otp_handler"),  # OTP handler callback
-            user_input.get(CONF_PIN, ""),
-        )
+        # If we have existing token (refresh token), use standard api.login which handles refresh
+        if existing_token:
+            token: Token = await hass.async_add_executor_job(
+                api.login,
+                user_input[CONF_USERNAME],
+                user_input[CONF_PASSWORD],
+                existing_token,
+                user_input.get("otp_handler"),
+                user_input.get(CONF_PIN, ""),
+            )
+        else:
+            # New login path for USA region - use custom flow
+            if user_input[CONF_REGION] == REGION_USA:
+                token = await hass.async_add_executor_job(
+                    _custom_login,
+                    api,
+                    user_input[CONF_USERNAME],
+                    user_input[CONF_PASSWORD],
+                    user_input.get("otp_handler"),
+                )
+            else:
+                # Other regions standard flow
+                token: Token = await hass.async_add_executor_job(
+                    api.login,
+                    user_input[CONF_USERNAME],
+                    user_input[CONF_PASSWORD],
+                    None,
+                    user_input.get("otp_handler"),
+                    user_input.get(CONF_PIN, ""),
+                )
 
         if token is None:
             raise InvalidAuth
@@ -276,6 +353,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     language=self.hass.config.language,
                 )
                 
+                # Restore device_id from context
+                if self._otp_context and self._otp_context.get("device_id"):
+                    api.device_id = self._otp_context["device_id"]
+                
                 # Send OTP request
                 otp_key = self._otp_context.get("otpKey") if self._otp_context else None
                 
@@ -351,6 +432,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         full_config[CONF_BRAND],
                         language=self.hass.config.language,
                     )
+                    
+                    # Restore device_id from context
+                    if self._otp_context and self._otp_context.get("device_id"):
+                        api.device_id = self._otp_context["device_id"]
                     
                     # Verify OTP and get session
                     otp_key = self._otp_context.get("otpKey") if self._otp_context else None
