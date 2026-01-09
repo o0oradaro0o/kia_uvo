@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import uuid
+import logging
 import datetime as dt
+import hashlib
+from typing import Any
 
 from hyundai_kia_connect_api import Token, VehicleManager
 from hyundai_kia_connect_api.exceptions import AuthenticationError
