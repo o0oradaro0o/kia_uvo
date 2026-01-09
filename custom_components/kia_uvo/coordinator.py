@@ -111,18 +111,21 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
             language=hass.config.language,
         )
         
-        # Patch API headers for USA region
-        if config_entry.data.get(CONF_REGION) and hasattr(self.vehicle_manager.api, "device_id"):
-             # We need to know if it is USA. 
-             # We can check the REGIONS dict, but here we only have the int index.
-             # Assuming we are importing REGIONS... wait we need REGIONS.
-             # Or just check if api class name is KiaUvoApiUSA?
-             if self.vehicle_manager.api.__class__.__name__ == "KiaUvoApiUSA":
-                 _LOGGER.debug(f"{DOMAIN} - Monkeypatching API headers for USA")
-                 # We bind the method to the instance
-                 self.vehicle_manager.api.api_headers = lambda: _get_usa_headers(self.vehicle_manager.api.device_id)
-        stored_refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
+        
+        # Hydrate device_id explicitly from storage if available
         stored_device_id = config_entry.data.get(CONF_DEVICE_ID)
+        if stored_device_id and hasattr(self.vehicle_manager.api, "device_id"):
+            _LOGGER.debug(f"{DOMAIN} - Hydrating API device_id: {stored_device_id}")
+            self.vehicle_manager.api.device_id = stored_device_id
+
+        # Patch API headers for USA region
+        # We check both the region config AND the class name to be sure
+        if self.vehicle_manager.api.__class__.__name__ == "KiaUvoApiUSA":
+             _LOGGER.debug(f"{DOMAIN} - Monkeypatching API headers for KiaUvoApiUSA")
+             # We bind the method to the instance
+             self.vehicle_manager.api.api_headers = lambda: _get_usa_headers(self.vehicle_manager.api.device_id)
+        
+        stored_refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
         if stored_refresh_token:
             _LOGGER.debug(f"{DOMAIN} - Using stored refresh token for authentication")
             self.vehicle_manager.token = Token(
