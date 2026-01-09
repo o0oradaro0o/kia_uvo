@@ -7,6 +7,9 @@ import datetime as dt
 import traceback
 import logging
 import asyncio
+import uuid
+import time
+import datetime as dt
 
 from hyundai_kia_connect_api import (
     VehicleManager,
@@ -47,7 +50,40 @@ from .const import (
     DEFAULT_USE_EMAIL_WITH_GEOCODE_API,
     CONF_USE_EMAIL_WITH_GEOCODE_API,
     CONF_ENABLE_GEOLOCATION_ENTITY,
+    REGION_USA,
 )
+
+def _get_usa_headers(device_id):
+    """Generate correct headers for Kia USA API."""
+    offset = time.localtime().tm_gmtoff / 60 / 60
+    client_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, device_id)
+    
+    headers = {
+        "content-type": "application/json;charset=utf-8",
+        "accept": "application/json",
+        "accept-encoding": "gzip, deflate, br",
+        "accept-language": "en-US,en;q=0.9",
+        "accept-charset": "utf-8",
+        "apptype": "L",
+        "appversion": "7.22.0",
+        "clientid": "SPACL716-APL",
+        "clientuuid": str(client_uuid),
+        "from": "SPA",
+        "host": "api.owners.kia.com",
+        "language": "0",
+        "offset": str(int(offset)),
+        "ostype": "iOS",
+        "osversion": "15.8.5",
+        "phonebrand": "iPhone",
+        "secretkey": "sydnat-9kykci-Kuhtep-h5nK",
+        "to": "APIGW",
+        "tokentype": "A",
+        "user-agent": "KIAPrimo_iOS/37 CFNetwork/1335.0.3.4 Darwin/21.6.0",
+    }
+    date = dt.datetime.now(tz=dt.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    headers["date"] = date
+    headers["deviceid"] = device_id
+    return headers
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,9 +109,19 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
                 CONF_USE_EMAIL_WITH_GEOCODE_API, DEFAULT_USE_EMAIL_WITH_GEOCODE_API
             ),
             language=hass.config.language,
+            language=hass.config.language,
         )
         
-        # Set stored token from config entry to skip OTP on subsequent logins
+        # Patch API headers for USA region
+        if config_entry.data.get(CONF_REGION) and hasattr(self.vehicle_manager.api, "device_id"):
+             # We need to know if it is USA. 
+             # We can check the REGIONS dict, but here we only have the int index.
+             # Assuming we are importing REGIONS... wait we need REGIONS.
+             # Or just check if api class name is KiaUvoApiUSA?
+             if self.vehicle_manager.api.__class__.__name__ == "KiaUvoApiUSA":
+                 _LOGGER.debug(f"{DOMAIN} - Monkeypatching API headers for USA")
+                 # We bind the method to the instance
+                 self.vehicle_manager.api.api_headers = lambda: _get_usa_headers(self.vehicle_manager.api.device_id)
         stored_refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
         stored_device_id = config_entry.data.get(CONF_DEVICE_ID)
         if stored_refresh_token:
