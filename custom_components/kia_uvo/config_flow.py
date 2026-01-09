@@ -197,6 +197,64 @@ def _custom_login(api, username, password, otp_handler):
     raise AuthenticationError(f"Login failed: {response.text}")
 
 
+def _custom_send_otp(api, otp_key, notify_type, xid):
+    """Send OTP using custom headers."""
+    url = f"{api.API_URL}cmm/sendOTP"
+    headers = _get_usa_headers(api.device_id)
+    headers["otpkey"] = otp_key
+    headers["notifytype"] = notify_type
+    headers["xid"] = xid
+    
+    response = api.session.post(url, json={}, headers=headers)
+    _LOGGER.debug(f"{DOMAIN} - Send OTP Response {response.text}")
+    return response.json()
+
+
+def _custom_verify_otp(api, otp_key, otp_code, xid):
+    """Verify OTP and return sid, rmtoken."""
+    url = f"{api.API_URL}cmm/verifyOTP"
+    headers = _get_usa_headers(api.device_id)
+    headers["otpkey"] = otp_key
+    headers["xid"] = xid
+    
+    data = {"otp": otp_code}
+    response = api.session.post(url, json=data, headers=headers)
+    _LOGGER.debug(f"{DOMAIN} - Verify OTP Response {response.text}")
+    
+    response_json = response.json()
+    if response_json["status"]["statusCode"] != 0:
+         raise Exception(f"OTP verification failed: {response_json['status']['errorMessage']}")
+         
+    sid = response.headers.get("sid")
+    rmtoken = response.headers.get("rmtoken")
+    return sid, rmtoken
+
+
+def _custom_complete_login(api, username, password, sid, rmtoken):
+    """Complete login with OTP tokens."""
+    url = f"{api.API_URL}prof/authUser"
+    data = {
+        "deviceKey": api.device_id,
+        "deviceType": 2,
+        "userCredential": {"userId": username, "password": password},
+        # tncFlag might be needed here too? Master branch says:
+        # data = { "deviceKey": self.device_id, "deviceType": 2, "userCredential": ... }
+        # No tncFlag in _complete_login_with_otp in master.
+    }
+    
+    headers = _get_usa_headers(api.device_id)
+    headers["sid"] = sid
+    headers["rmtoken"] = rmtoken
+    
+    response = api.session.post(url, json=data, headers=headers)
+    _LOGGER.debug(f"{DOMAIN} - Complete Login Response {response.text}")
+    
+    final_sid = response.headers.get("sid")
+    if not final_sid:
+        raise Exception(f"No final sid returned. Response: {response.text}")
+    return final_sid
+
+
 async def validate_input(hass: HomeAssistant, user_input: dict[str, Any]) -> Token:
     """Validate the user input allows us to connect."""
     try:
@@ -408,7 +466,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 
                 # Call the API to send OTP
                 await self.hass.async_add_executor_job(
-                    api._send_otp,
+                    _custom_send_otp,
+                    api,
                     self._otp_context.get("otpKey"),
                     self._otp_method,
                     self._otp_context.get("xid", ""),
@@ -480,7 +539,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     xid = self._otp_context.get("xid", "") if self._otp_context else ""
                     
                     sid, rmtoken = await self.hass.async_add_executor_job(
-                        api._verify_otp,
+                        _custom_verify_otp,
+                        api,
                         otp_key,
                         otp_code,
                         xid,
@@ -488,7 +548,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     
                     # Complete login with OTP tokens
                     final_sid = await self.hass.async_add_executor_job(
-                        api._complete_login_with_otp,
+                        _custom_complete_login,
+                        api,
                         full_config[CONF_USERNAME],
                         full_config[CONF_PASSWORD],
                         sid,
