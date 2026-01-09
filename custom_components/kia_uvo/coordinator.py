@@ -109,7 +109,6 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
                 CONF_USE_EMAIL_WITH_GEOCODE_API, DEFAULT_USE_EMAIL_WITH_GEOCODE_API
             ),
             language=hass.config.language,
-            language=hass.config.language,
         )
         
         # Patch API headers for USA region
