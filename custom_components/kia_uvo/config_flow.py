@@ -195,7 +195,7 @@ async def validate_input(hass: HomeAssistant, user_input: dict[str, Any]) -> Tok
             )
         else:
             # New login path for USA region - use custom flow
-            if user_input[CONF_REGION] == REGION_USA:
+            if REGIONS[user_input[CONF_REGION]] == REGION_USA:
                 token = await hass.async_add_executor_job(
                     _custom_login,
                     api,
