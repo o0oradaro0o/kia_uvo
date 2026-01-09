@@ -30,6 +30,7 @@ from .const import (
     BRANDS,
     CONF_BRAND,
     CONF_DEVICE_ID,
+    CONF_ACCESS_TOKEN,
     CONF_FORCE_REFRESH_INTERVAL,
     CONF_NO_FORCE_REFRESH_HOUR_FINISH,
     CONF_NO_FORCE_REFRESH_HOUR_START,
@@ -558,6 +559,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     
                     # Store the tokens
                     full_config[CONF_REFRESH_TOKEN] = rmtoken
+                    full_config[CONF_ACCESS_TOKEN] = final_sid
                     full_config[CONF_DEVICE_ID] = getattr(api, "device_id", None)
                     
                     return await self._async_create_or_update_entry(full_config, self._credentials)

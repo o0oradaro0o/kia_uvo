@@ -38,6 +38,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_BRAND,
     CONF_DEVICE_ID,
+    CONF_ACCESS_TOKEN,
     CONF_FORCE_REFRESH_INTERVAL,
     CONF_NO_FORCE_REFRESH_HOUR_FINISH,
     CONF_NO_FORCE_REFRESH_HOUR_START,
@@ -121,34 +122,30 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Patch API headers for USA region
         if self.vehicle_manager.api.__class__.__name__ == "KiaUvoApiUSA":
-             _LOGGER.debug(f"{DOMAIN} - Monkeypatching API headers and session for KiaUvoApiUSA")
+             _LOGGER.debug(f"{DOMAIN} - Monkeypatching API headers for KiaUvoApiUSA")
              
-             # 1. Robust method monkeypatch using types.MethodType
+             # Robust method monkeypatch using types.MethodType
              api = self.vehicle_manager.api
              def patched_api_headers(self_api):
                  return _get_usa_headers(self_api.device_id)
              
              api.api_headers = types.MethodType(patched_api_headers, api)
-
-             # 2. Wrap session.post to log all requests/responses for troubleshooting
-             original_post = api.session.post
-             def patched_post(url, **kwargs):
-                 _LOGGER.debug(f"{DOMAIN} - API Request: {url} | Kwargs: {kwargs}")
-                 resp = original_post(url, **kwargs)
-                 _LOGGER.debug(f"{DOMAIN} - API Response: {resp.status_code} | Body: {resp.text}")
-                 return resp
-             api.session.post = patched_post
+        else:
+             _LOGGER.debug(f"{DOMAIN} - API class is {self.vehicle_manager.api.__class__.__name__}, not patching")
         
         stored_refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
-        if stored_refresh_token:
-            _LOGGER.debug(f"{DOMAIN} - Using stored refresh token for authentication")
+        stored_access_token = config_entry.data.get(CONF_ACCESS_TOKEN)
+        if stored_refresh_token and stored_access_token:
+            _LOGGER.warning(f"{DOMAIN} - Using stored tokens for authentication (skip re-login)")
+            # Set valid_until to 1 hour from now so library doesn't try to re-login
+            valid_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)
             self.vehicle_manager.token = Token(
                 username=config_entry.data.get(CONF_USERNAME),
                 password=config_entry.data.get(CONF_PASSWORD),
-                access_token="",  # Will be refreshed
+                access_token=stored_access_token,
                 refresh_token=stored_refresh_token,
                 device_id=stored_device_id,
-                valid_until=dt.datetime.min.replace(tzinfo=dt.timezone.utc),  # Force refresh
+                valid_until=valid_until,
             )
         self.scan_interval: int = (
             config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL) * 60

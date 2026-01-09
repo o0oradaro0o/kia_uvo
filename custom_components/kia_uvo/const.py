@@ -12,6 +12,7 @@ CONF_USE_EMAIL_WITH_GEOCODE_API: str = "use_email_with_geocode_api"
 # Token persistence keys for OTP support
 CONF_REFRESH_TOKEN: str = "refresh_token"
 CONF_DEVICE_ID: str = "device_id"
+CONF_ACCESS_TOKEN: str = "access_token"
 
 REGION_EUROPE: str = "Europe"
 REGION_CANADA: str = "Canada"

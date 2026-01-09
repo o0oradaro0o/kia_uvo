@@ -28,6 +28,7 @@ from .const import (
     CONF_USE_EMAIL_WITH_GEOCODE_API,
     CONF_REFRESH_TOKEN,
     CONF_DEVICE_ID,
+    CONF_ACCESS_TOKEN,
 )
 from .coordinator import HyundaiKiaConnectDataUpdateCoordinator
 from .services import async_setup_services, async_unload_services
@@ -132,6 +133,8 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
             new_data[CONF_REFRESH_TOKEN] = None
         if CONF_DEVICE_ID not in new_data:
             new_data[CONF_DEVICE_ID] = None
+        if CONF_ACCESS_TOKEN not in new_data:
+            new_data[CONF_ACCESS_TOKEN] = None
             
         hass.config_entries.async_update_entry(config_entry, data=new_data)
         config_entry.version = 3
