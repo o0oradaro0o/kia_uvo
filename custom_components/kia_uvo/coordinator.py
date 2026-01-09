@@ -10,6 +10,7 @@ import asyncio
 import uuid
 import time
 import datetime as dt
+import types
 
 from hyundai_kia_connect_api import (
     VehicleManager,
@@ -119,11 +120,24 @@ class HyundaiKiaConnectDataUpdateCoordinator(DataUpdateCoordinator):
             self.vehicle_manager.api.device_id = stored_device_id
 
         # Patch API headers for USA region
-        # We check both the region config AND the class name to be sure
         if self.vehicle_manager.api.__class__.__name__ == "KiaUvoApiUSA":
-             _LOGGER.debug(f"{DOMAIN} - Monkeypatching API headers for KiaUvoApiUSA")
-             # We bind the method to the instance
-             self.vehicle_manager.api.api_headers = lambda: _get_usa_headers(self.vehicle_manager.api.device_id)
+             _LOGGER.debug(f"{DOMAIN} - Monkeypatching API headers and session for KiaUvoApiUSA")
+             
+             # 1. Robust method monkeypatch using types.MethodType
+             api = self.vehicle_manager.api
+             def patched_api_headers(self_api):
+                 return _get_usa_headers(self_api.device_id)
+             
+             api.api_headers = types.MethodType(patched_api_headers, api)
+
+             # 2. Wrap session.post to log all requests/responses for troubleshooting
+             original_post = api.session.post
+             def patched_post(url, **kwargs):
+                 _LOGGER.debug(f"{DOMAIN} - API Request: {url} | Kwargs: {kwargs}")
+                 resp = original_post(url, **kwargs)
+                 _LOGGER.debug(f"{DOMAIN} - API Response: {resp.status_code} | Body: {resp.text}")
+                 return resp
+             api.session.post = patched_post
         
         stored_refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
         if stored_refresh_token:
