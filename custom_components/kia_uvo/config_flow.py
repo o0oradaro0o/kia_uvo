@@ -6,6 +6,7 @@ import uuid
 import logging
 import datetime as dt
 import hashlib
+import time
 from typing import Any
 
 from hyundai_kia_connect_api import Token, VehicleManager
@@ -106,6 +107,39 @@ OPTIONS_SCHEMA = vol.Schema(
 )
 
 
+def _get_usa_headers(device_id):
+    """Generate correct headers for Kia USA API."""
+    offset = time.localtime().tm_gmtoff / 60 / 60
+    client_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, device_id)
+    
+    headers = {
+        "content-type": "application/json;charset=utf-8",
+        "accept": "application/json",
+        "accept-encoding": "gzip, deflate, br",
+        "accept-language": "en-US,en;q=0.9",
+        "accept-charset": "utf-8",
+        "apptype": "L",
+        "appversion": "7.22.0",
+        "clientid": "SPACL716-APL",
+        "clientuuid": str(client_uuid),
+        "from": "SPA",
+        "host": "api.owners.kia.com",
+        "language": "0",
+        "offset": str(int(offset)),
+        "ostype": "iOS",
+        "osversion": "15.8.5",
+        "phonebrand": "iPhone",
+        "secretkey": "sydnat-9kykci-Kuhtep-h5nK",
+        "to": "APIGW",
+        "tokentype": "A",
+        "user-agent": "KIAPrimo_iOS/37 CFNetwork/1335.0.3.4 Darwin/21.6.0",
+    }
+    date = dt.datetime.now(tz=dt.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    headers["date"] = date
+    headers["deviceid"] = device_id
+    return headers
+
+
 def _custom_login(api, username, password, otp_handler):
     """Custom login logic to handle OTP and tncFlag."""
     # Generate a device ID if not already present
@@ -120,7 +154,8 @@ def _custom_login(api, username, password, otp_handler):
         "tncFlag": 1, 
     }
     
-    headers = api.api_headers()
+    # Use custom headers
+    headers = _get_usa_headers(api.device_id)
     response = api.session.post(url, json=data, headers=headers)
     response_json = response.json()
     
